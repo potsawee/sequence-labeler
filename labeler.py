@@ -10,6 +10,8 @@ try:
 except:
     import pickle
 
+import pdb
+
 class SequenceLabeler(object):
     def __init__(self, config):
         self.config = config
@@ -114,41 +116,78 @@ class SequenceLabeler(object):
         else:
             raise ValueError("Unknown initializer")
 
-        self.word_embeddings = tf.get_variable("word_embeddings", 
-            shape=[len(self.word2id), self.config["word_embedding_size"]], 
-            initializer=(tf.zeros_initializer() if self.config["emb_initial_zero"] == True else self.initializer), 
+        self.word_embeddings = tf.get_variable("word_embeddings",
+            shape=[len(self.word2id), self.config["word_embedding_size"]],
+            initializer=(tf.zeros_initializer() if self.config["emb_initial_zero"] == True else self.initializer),
             trainable=(True if self.config["train_embeddings"] == True else False))
         input_tensor = tf.nn.embedding_lookup(self.word_embeddings, self.word_ids)
         input_vector_size = self.config["word_embedding_size"]
 
         if self.config["char_embedding_size"] > 0 and self.config["char_recurrent_size"] > 0:
             with tf.variable_scope("chars"), tf.control_dependencies([tf.assert_equal(tf.shape(self.char_ids)[2], tf.reduce_max(self.word_lengths), message="Char dimensions don't match")]):
-                self.char_embeddings = tf.get_variable("char_embeddings", 
-                    shape=[len(self.char2id), self.config["char_embedding_size"]], 
-                    initializer=self.initializer, 
+                self.char_embeddings = tf.get_variable("char_embeddings",
+                    shape=[len(self.char2id), self.config["char_embedding_size"]],
+                    initializer=self.initializer,
                     trainable=True)
+
                 char_input_tensor = tf.nn.embedding_lookup(self.char_embeddings, self.char_ids)
 
                 s = tf.shape(char_input_tensor)
                 char_input_tensor = tf.reshape(char_input_tensor, shape=[s[0]*s[1], s[2], self.config["char_embedding_size"]])
                 _word_lengths = tf.reshape(self.word_lengths, shape=[s[0]*s[1]])
 
-                char_lstm_cell_fw = tf.nn.rnn_cell.LSTMCell(self.config["char_recurrent_size"], 
-                    use_peepholes=self.config["lstm_use_peepholes"], 
-                    state_is_tuple=True, 
+                char_lstm_cell_fw = tf.nn.rnn_cell.LSTMCell(self.config["char_recurrent_size"],
+                    use_peepholes=self.config["lstm_use_peepholes"],
+                    state_is_tuple=True,
                     initializer=self.initializer,
                     reuse=False)
-                char_lstm_cell_bw = tf.nn.rnn_cell.LSTMCell(self.config["char_recurrent_size"], 
-                    use_peepholes=self.config["lstm_use_peepholes"], 
-                    state_is_tuple=True, 
+                char_lstm_cell_bw = tf.nn.rnn_cell.LSTMCell(self.config["char_recurrent_size"],
+                    use_peepholes=self.config["lstm_use_peepholes"],
+                    state_is_tuple=True,
                     initializer=self.initializer,
                     reuse=False)
 
-                char_lstm_outputs = tf.nn.bidirectional_dynamic_rnn(char_lstm_cell_fw, char_lstm_cell_bw, char_input_tensor, sequence_length=_word_lengths, dtype=tf.float32, time_major=False)
-                _, ((_, char_output_fw), (_, char_output_bw)) = char_lstm_outputs
-                char_output_tensor = tf.concat([char_output_fw, char_output_bw], axis=-1)
-                char_output_tensor = tf.reshape(char_output_tensor, shape=[s[0], s[1], 2 * self.config["char_recurrent_size"]])
+                # char_lstm_outputs = tf.nn.bidirectional_dynamic_rnn(char_lstm_cell_fw, char_lstm_cell_bw, char_input_tensor, sequence_length=_word_lengths, dtype=tf.float32, time_major=False)
+                # _, ((_, char_output_fw), (_, char_output_bw)) = char_lstm_outputs
+                # char_output_tensor = tf.concat([char_output_fw, char_output_bw], axis=-1)
+                # char_output_tensor = tf.reshape(char_output_tensor, shape=[s[0], s[1], 2 * self.config["char_recurrent_size"]])
+                # char_output_vector_size = 2 * self.config["char_recurrent_size"]
+
+                # -------- Attention Mechanism -------- #
+                # s[0] = batch_size
+                # s[1] = max_sentence_length
+                # s[2] = max_word_legnth
+                # s[3] = char_embedding_size
+                pdb.set_trace()
+                (char_lstm_outputs_fw, char_lstm_outputs_bw), _ = \
+                    tf.nn.bidirectional_dynamic_rnn(char_lstm_cell_fw, char_lstm_cell_bw,
+                                                    char_input_tensor,
+                                                    dtype=tf.float32, time_major=False)
+
+                attention_fw_matrix = tf.get_variable(name="attention_fw_matrix", shape=[self.config["char_recurrent_size"],1],
+                                                    initializer=self.initializer, trainable=True)
+                char_lstm_outputs_fw = tf.reshape(char_lstm_outputs_fw,shape=[s[0]*s[1]*s[2],self.config["char_recurrent_size"]])
+                attention_fw_weight = tf.matmul(char_lstm_outputs_fw, attention_fw_matrix)
+                attention_fw_weight = tf.nn.softmax(tf.reshape(attention_fw_weight, shape=[s[0]*s[1],s[2]]))
+                attention_fw_weight = tf.reshape(attention_fw_weight, shape=[s[0]*s[1]*s[2],1])
+                attention_fw_output = tf.reshape(tf.multiply(attention_fw_weight, char_lstm_outputs_fw),
+                                              shape=[s[0], s[1], s[2], self.config["char_recurrent_size"]])
+                attention_fw_output = tf.reduce_sum(attention_fw_output, axis=2)
+
+                attention_bw_matrix = tf.get_variable(name="attention_bw_matrix", shape=[self.config["char_recurrent_size"],1],
+                                                    initializer=self.initializer, trainable=True)
+                char_lstm_outputs_bw = tf.reshape(char_lstm_outputs_bw,shape=[s[0]*s[1]*s[2],self.config["char_recurrent_size"]])
+                attention_bw_weight = tf.matmul(char_lstm_outputs_bw, attention_bw_matrix)
+                attention_bw_weight = tf.nn.softmax(tf.reshape(attention_bw_weight, shape=[s[0]*s[1],s[2]]))
+                attention_bw_weight = tf.reshape(attention_bw_weight, shape=[s[0]*s[1]*s[2],1])
+                attention_bw_output = tf.reshape(tf.multiply(attention_bw_weight, char_lstm_outputs_bw),
+                                              shape=[s[0], s[1], s[2], self.config["char_recurrent_size"]])
+
+                attention_bw_output = tf.reduce_sum(attention_bw_output, axis=2)
+
+                char_output_tensor = tf.concat([attention_fw_output,attention_bw_output], axis=-1)
                 char_output_vector_size = 2 * self.config["char_recurrent_size"]
+                # ------------------------------------- #
 
                 if self.config["lmcost_char_gamma"] > 0.0:
                     self.loss += self.config["lmcost_char_gamma"] * self.construct_lmcost(char_output_tensor, char_output_tensor, self.sentence_lengths, self.word_ids, "separate", "lmcost_char_separate")
@@ -185,14 +224,14 @@ class SequenceLabeler(object):
         dropout_input = self.config["dropout_input"] * tf.cast(self.is_training, tf.float32) + (1.0 - tf.cast(self.is_training, tf.float32))
         input_tensor =  tf.nn.dropout(input_tensor, dropout_input, name="dropout_word")
 
-        word_lstm_cell_fw = tf.nn.rnn_cell.LSTMCell(self.config["word_recurrent_size"], 
-            use_peepholes=self.config["lstm_use_peepholes"], 
-            state_is_tuple=True, 
+        word_lstm_cell_fw = tf.nn.rnn_cell.LSTMCell(self.config["word_recurrent_size"],
+            use_peepholes=self.config["lstm_use_peepholes"],
+            state_is_tuple=True,
             initializer=self.initializer,
             reuse=False)
-        word_lstm_cell_bw = tf.nn.rnn_cell.LSTMCell(self.config["word_recurrent_size"], 
-            use_peepholes=self.config["lstm_use_peepholes"], 
-            state_is_tuple=True, 
+        word_lstm_cell_bw = tf.nn.rnn_cell.LSTMCell(self.config["word_recurrent_size"],
+            use_peepholes=self.config["lstm_use_peepholes"],
+            state_is_tuple=True,
             initializer=self.initializer,
             reuse=False)
 
@@ -221,14 +260,14 @@ class SequenceLabeler(object):
             crf_num_tags = self.scores.get_shape()[2].value
             self.crf_transition_params = tf.get_variable("output_crf_transitions", [crf_num_tags, crf_num_tags], initializer=self.initializer)
             log_likelihood, self.crf_transition_params = tf.contrib.crf.crf_log_likelihood(self.scores, self.label_ids, self.sentence_lengths, transition_params=self.crf_transition_params)
-            self.loss += self.config["main_cost"] * tf.reduce_sum(-log_likelihood) 
+            self.loss += self.config["main_cost"] * tf.reduce_sum(-log_likelihood)
         else:
             self.probabilities = tf.nn.softmax(self.scores)
             self.predictions = tf.argmax(self.probabilities, 2)
             loss_ = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.scores, labels=self.label_ids)
             mask = tf.sequence_mask(self.sentence_lengths, maxlen=tf.shape(self.word_ids)[1])
             loss_ = tf.boolean_mask(loss_, mask)
-            self.loss += self.config["main_cost"] * tf.reduce_sum(loss_) 
+            self.loss += self.config["main_cost"] * tf.reduce_sum(loss_)
 
         self.train_op = self.construct_optimizer(self.config["opt_strategy"], self.loss, self.learningrate, self.config["clip"])
 
@@ -470,4 +509,3 @@ class SequenceLabeler(object):
                 assert(variable.shape == dump["params"][variable.name].shape), "Variable shape not as expected: " + str(variable.name) + " " + str(variable.shape) + " " + str(dump["params"][variable.name].shape)
                 value = numpy.asarray(dump["params"][variable.name])
                 self.session.run(variable.assign(value))
-
