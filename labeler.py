@@ -158,31 +158,63 @@ class SequenceLabeler(object):
                 # s[1] = max_sentence_length
                 # s[2] = max_word_legnth
                 # s[3] = char_embedding_size
-                pdb.set_trace()
+
+                # ------------- Version 1 ------------- #
+                # (char_lstm_outputs_fw, char_lstm_outputs_bw), _ = \
+                #     tf.nn.bidirectional_dynamic_rnn(char_lstm_cell_fw, char_lstm_cell_bw,
+                #                                     char_input_tensor,
+                #                                     dtype=tf.float32, time_major=False)
+                #
+                # attention_fw_matrix = tf.get_variable(name="attention_fw_matrix", shape=[self.config["char_recurrent_size"],1],
+                #                                     initializer=self.initializer, trainable=True)
+                # char_lstm_outputs_fw = tf.reshape(char_lstm_outputs_fw,shape=[s[0]*s[1]*s[2],self.config["char_recurrent_size"]])
+                # attention_fw = tf.matmul(char_lstm_outputs_fw, attention_fw_matrix)
+                # attention_fw = tf.nn.softmax(tf.reshape(attention_fw, shape=[s[0]*s[1],s[2]]))
+                # attention_fw = tf.reshape(attention_fw, shape=[s[0]*s[1]*s[2],1])
+                # attention_fw_output = tf.reshape(tf.multiply(attention_fw, char_lstm_outputs_fw),
+                #                               shape=[s[0], s[1], s[2], self.config["char_recurrent_size"]])
+                # attention_fw_output = tf.reduce_sum(attention_fw_output, axis=2)
+                #
+                # attention_bw_matrix = tf.get_variable(name="attention_bw_matrix", shape=[self.config["char_recurrent_size"],1],
+                #                                     initializer=self.initializer, trainable=True)
+                # char_lstm_outputs_bw = tf.reshape(char_lstm_outputs_bw,shape=[s[0]*s[1]*s[2],self.config["char_recurrent_size"]])
+                # attention_bw = tf.matmul(char_lstm_outputs_bw, attention_bw_matrix)
+                # attention_bw = tf.nn.softmax(tf.reshape(attention_bw, shape=[s[0]*s[1],s[2]]))
+                # attention_bw = tf.reshape(attention_bw, shape=[s[0]*s[1]*s[2],1])
+                # attention_bw_output = tf.reshape(tf.multiply(attention_bw, char_lstm_outputs_bw),
+                #                               shape=[s[0], s[1], s[2], self.config["char_recurrent_size"]])
+                #
+                # attention_bw_output = tf.reduce_sum(attention_bw_output, axis=2)
+                #
+                # char_output_tensor = tf.concat([attention_fw_output,attention_bw_output], axis=-1)
+                # char_output_vector_size = 2 * self.config["char_recurrent_size"]
+
+                # ------------- Version 2 ------------- #
                 (char_lstm_outputs_fw, char_lstm_outputs_bw), _ = \
                     tf.nn.bidirectional_dynamic_rnn(char_lstm_cell_fw, char_lstm_cell_bw,
                                                     char_input_tensor,
                                                     dtype=tf.float32, time_major=False)
 
-                attention_fw_matrix = tf.get_variable(name="attention_fw_matrix", shape=[self.config["char_recurrent_size"],1],
-                                                    initializer=self.initializer, trainable=True)
-                char_lstm_outputs_fw = tf.reshape(char_lstm_outputs_fw,shape=[s[0]*s[1]*s[2],self.config["char_recurrent_size"]])
-                attention_fw_weight = tf.matmul(char_lstm_outputs_fw, attention_fw_matrix)
-                attention_fw_weight = tf.nn.softmax(tf.reshape(attention_fw_weight, shape=[s[0]*s[1],s[2]]))
-                attention_fw_weight = tf.reshape(attention_fw_weight, shape=[s[0]*s[1]*s[2],1])
-                attention_fw_output = tf.reshape(tf.multiply(attention_fw_weight, char_lstm_outputs_fw),
-                                              shape=[s[0], s[1], s[2], self.config["char_recurrent_size"]])
+                attention_fw_matrix = tf.get_variable(name="attention_fw_matrix",
+                                                    shape=[self.config["char_recurrent_size"],self.config["char_embedding_size"]],
+                                                    initializer=tf.initializers.identity(), trainable=True)
+                attention_fw = tf.tensordot(char_lstm_outputs_fw, attention_fw_matrix, axes=((-1),(0)))
+                attention_fw = tf.reduce_sum(tf.multiply(attention_fw, char_input_tensor), axis=-1)
+                attention_fw = tf.nn.softmax(attention_fw)
+                attention_fw_output = tf.multiply(tf.reshape(attention_fw, shape=[s[0]*s[1]*s[2],1]),
+                                                  tf.reshape(char_lstm_outputs_fw,shape=[s[0]*s[1]*s[2],self.config["char_recurrent_size"]]))
+                attention_fw_output = tf.reshape(attention_fw_output, shape=[s[0], s[1], s[2], self.config["char_recurrent_size"]])
                 attention_fw_output = tf.reduce_sum(attention_fw_output, axis=2)
 
-                attention_bw_matrix = tf.get_variable(name="attention_bw_matrix", shape=[self.config["char_recurrent_size"],1],
-                                                    initializer=self.initializer, trainable=True)
-                char_lstm_outputs_bw = tf.reshape(char_lstm_outputs_bw,shape=[s[0]*s[1]*s[2],self.config["char_recurrent_size"]])
-                attention_bw_weight = tf.matmul(char_lstm_outputs_bw, attention_bw_matrix)
-                attention_bw_weight = tf.nn.softmax(tf.reshape(attention_bw_weight, shape=[s[0]*s[1],s[2]]))
-                attention_bw_weight = tf.reshape(attention_bw_weight, shape=[s[0]*s[1]*s[2],1])
-                attention_bw_output = tf.reshape(tf.multiply(attention_bw_weight, char_lstm_outputs_bw),
-                                              shape=[s[0], s[1], s[2], self.config["char_recurrent_size"]])
-
+                attention_bw_matrix = tf.get_variable(name="attention_bw_matrix",
+                                                    shape=[self.config["char_recurrent_size"],self.config["char_embedding_size"]],
+                                                    initializer=tf.initializers.identity(), trainable=True)
+                attention_bw = tf.tensordot(char_lstm_outputs_bw, attention_bw_matrix, axes=((-1),(0)))
+                attention_bw = tf.reduce_sum(tf.multiply(attention_bw, char_input_tensor), axis=-1)
+                attention_bw = tf.nn.softmax(attention_bw)
+                attention_bw_output = tf.multiply(tf.reshape(attention_bw, shape=[s[0]*s[1]*s[2],1]),
+                                                  tf.reshape(char_lstm_outputs_bw,shape=[s[0]*s[1]*s[2],self.config["char_recurrent_size"]]))
+                attention_bw_output = tf.reshape(attention_bw_output, shape=[s[0], s[1], s[2], self.config["char_recurrent_size"]])
                 attention_bw_output = tf.reduce_sum(attention_bw_output, axis=2)
 
                 char_output_tensor = tf.concat([attention_fw_output,attention_bw_output], axis=-1)
@@ -382,7 +414,6 @@ class SequenceLabeler(object):
                 word_lengths[i][j] = len(batch[i][j][0])
                 for k in range(min(len(batch[i][j][0]), max_word_length)):
                     char_ids[i][j][k] = self.translate2id(batch[i][j][0][k], self.char2id, self.CUNK)
-
         input_dictionary = {self.word_ids: word_ids, self.char_ids: char_ids, self.sentence_lengths: sentence_lengths, self.word_lengths: word_lengths, self.label_ids: label_ids, self.learningrate: learningrate, self.is_training: is_training}
         return input_dictionary
 
