@@ -6,6 +6,10 @@ import math
 import os
 import gc
 
+# Debugging
+from debug import print_debug
+import pdb
+
 try:
     import ConfigParser as configparser
 except:
@@ -131,6 +135,12 @@ def process_sentences(data, labeler, is_training, learningrate, config, name):
     if is_training == True:
         random.shuffle(batches_of_sentence_ids)
 
+    # Debugging #
+    num_batches = len(batches_of_sentence_ids)
+    print('num_batches: ', num_batches)
+    sys.stdout.flush()
+    num_count = 0
+    # --------- #
     for sentence_ids_in_batch in batches_of_sentence_ids:
         batch = [data[i] for i in sentence_ids_in_batch]
         cost, predicted_labels, predicted_probs = labeler.process_batch(batch, is_training, learningrate)
@@ -141,6 +151,13 @@ def process_sentences(data, labeler, is_training, learningrate, config, name):
         while config["garbage_collection"] == True and gc.collect() > 0:
             pass
 
+        # Debugging #
+        num_count += 1
+        if(num_count % 100 == 0):
+            print('#')
+            sys.stdout.flush()
+        # --------- #
+
     results = evaluator.get_results(name)
     for key in results:
         print(key + ": " + str(results[key]))
@@ -148,8 +165,10 @@ def process_sentences(data, labeler, is_training, learningrate, config, name):
     return results
 
 
-
 def run_experiment(config_path):
+
+
+
     config = parse_config("config", config_path)
     temp_model_path = config_path + ".model"
     if "random_seed" in config:
@@ -173,8 +192,11 @@ def run_experiment(config_path):
         labeler = SequenceLabeler.load(config["load"])
     else:
         labeler = SequenceLabeler(config)
+        # print_debug('Start1')
         labeler.build_vocabs(data_train, data_dev, data_test, config["preload_vectors"])
+        # print_debug('End1')
         labeler.construct_network()
+        # print_debug('End2')
         labeler.initialize_session()
         if config["preload_vectors"] != None:
             labeler.preload_word_embeddings(config["preload_vectors"])
@@ -182,6 +204,8 @@ def run_experiment(config_path):
     print("parameter_count: " + str(labeler.get_parameter_count()))
     print("parameter_count_without_word_embeddings: " + str(labeler.get_parameter_count_without_word_embeddings()))
 
+    sys.stdout.flush()
+#     pdb.set_trace()
     if data_train != None:
         model_selector = config["model_selector"].split(":")[0]
         model_selector_type = config["model_selector"].split(":")[1]
@@ -191,10 +215,10 @@ def run_experiment(config_path):
         for epoch in range(config["epochs"]):
             print("EPOCH: " + str(epoch))
             print("current_learningrate: " + str(learningrate))
+            sys.stdout.flush()
             random.shuffle(data_train)
 
             results_train = process_sentences(data_train, labeler, is_training=True, learningrate=learningrate, config=config, name="train")
-
             if data_dev != None:
                 results_dev = process_sentences(data_dev, labeler, is_training=False, learningrate=0.0, config=config, name="dev")
 
@@ -202,7 +226,7 @@ def run_experiment(config_path):
                     sys.stderr.write("ERROR: Cost is NaN or Inf. Exiting.\n")
                     break
 
-                if (epoch == 0 or (model_selector_type == "high" and results_dev[model_selector] > best_selector_value) 
+                if (epoch == 0 or (model_selector_type == "high" and results_dev[model_selector] > best_selector_value)
                                or (model_selector_type == "low" and results_dev[model_selector] < best_selector_value)):
                     best_epoch = epoch
                     best_selector_value = results_dev[model_selector]
@@ -240,4 +264,3 @@ def run_experiment(config_path):
 
 if __name__ == "__main__":
     run_experiment(sys.argv[1])
-
