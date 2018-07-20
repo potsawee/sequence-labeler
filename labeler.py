@@ -464,6 +464,7 @@ class SequenceLabeler(object):
     def initialize_session(self):
         tf.set_random_seed(self.config["random_seed"])
         session_config = tf.ConfigProto()
+        session_config = tf.ConfigProto(allow_soft_placement=True)
         session_config.gpu_options.allow_growth = self.config["tf_allow_growth"]
         session_config.gpu_options.per_process_gpu_memory_fraction = self.config["tf_per_process_gpu_memory_fraction"]
         self.session = tf.Session(config=session_config)
