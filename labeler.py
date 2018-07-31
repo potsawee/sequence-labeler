@@ -268,8 +268,8 @@ class SequenceLabeler(object):
             initializer=self.initializer,
             reuse=False)
 
-        # with tf.control_dependencies([tf.assert_equal(tf.shape(self.word_ids)[1], tf.reduce_max(self.sentence_lengths), message="Sentence dimensions don't match")]):
-        #     (lstm_outputs_fw, lstm_outputs_bw), _ = tf.nn.bidirectional_dynamic_rnn(word_lstm_cell_fw, word_lstm_cell_bw, input_tensor, sequence_length=self.sentence_lengths, dtype=tf.float32, time_major=False)
+        with tf.control_dependencies([tf.assert_equal(tf.shape(self.word_ids)[1], tf.reduce_max(self.sentence_lengths), message="Sentence dimensions don't match")]):
+            (lstm_outputs_fw, lstm_outputs_bw), _ = tf.nn.bidirectional_dynamic_rnn(word_lstm_cell_fw, word_lstm_cell_bw, input_tensor, sequence_length=self.sentence_lengths, dtype=tf.float32, time_major=False)
 
 
         # ---------------- Word-Level Attention Mechanism ---------------- #
@@ -288,33 +288,33 @@ class SequenceLabeler(object):
         # lstm_outputs_fw           [B,M,N]
         # lstm_attention_fw_matrix  [N,N]
 
-        (lstm_outputs_fw, lstm_outputs_bw), _ = \
-            tf.nn.bidirectional_dynamic_rnn(word_lstm_cell_fw, word_lstm_cell_bw,
-                                            input_tensor,
-                                            sequence_length=self.sentence_lengths,
-                                            dtype=tf.float32, time_major=False)
-
-        # Forward
-        lstm_attention_fw_matrix = tf.get_variable(name="lstm_attention_fw_matrix",
-                                                   shape=[self.config["word_recurrent_size"], self.config["word_recurrent_size"]],
-                                                   initializer=tf.initializers.identity(), trainable=True)
-        lstm_attention_fw = tf.tensordot(lstm_outputs_fw, lstm_attention_fw_matrix, axes=((-1),(0)))  # [B,M,N]
-        lstm_attention_fw = tf.matmul(lstm_attention_fw, tf.transpose(lstm_outputs_fw, perm=[0,2,1])) # matmul([B,M,N], B,N,M]) => [B,M,M]
-        lstm_attention_fw = tf.nn.softmax(lstm_attention_fw) # [B,M,M]
-        lstm_attention_fw_output = tf.matmul(lstm_attention_fw, lstm_outputs_fw) # [B,M,N]
-
-        # Backward
-        lstm_attention_bw_matrix = tf.get_variable(name="lstm_attention_bw_matrix",
-                                                   shape=[self.config["word_recurrent_size"], self.config["word_recurrent_size"]],
-                                                   initializer=tf.initializers.identity(), trainable=True)
-        lstm_attention_bw = tf.tensordot(lstm_outputs_bw, lstm_attention_bw_matrix, axes=((-1),(0)))  # [B,M,N]
-        lstm_attention_bw = tf.matmul(lstm_attention_bw, tf.transpose(lstm_outputs_bw, perm=[0,2,1])) # matmul([B,M,N], B,N,M]) => [B,M,M]
-        lstm_attention_bw = tf.nn.softmax(lstm_attention_bw) # [B,M,M]
-        lstm_attention_bw_output = tf.matmul(lstm_attention_bw, lstm_outputs_bw) # [B,M,N]
-
-        # To be consistent with the next part of the code
-        lstm_outputs_fw = lstm_attention_fw_output
-        lstm_outputs_bw = lstm_attention_bw_output
+        # (lstm_outputs_fw, lstm_outputs_bw), _ = \
+        #     tf.nn.bidirectional_dynamic_rnn(word_lstm_cell_fw, word_lstm_cell_bw,
+        #                                     input_tensor,
+        #                                     sequence_length=self.sentence_lengths,
+        #                                     dtype=tf.float32, time_major=False)
+        #
+        # # Forward
+        # lstm_attention_fw_matrix = tf.get_variable(name="lstm_attention_fw_matrix",
+        #                                            shape=[self.config["word_recurrent_size"], self.config["word_recurrent_size"]],
+        #                                            initializer=tf.initializers.identity(), trainable=True)
+        # lstm_attention_fw = tf.tensordot(lstm_outputs_fw, lstm_attention_fw_matrix, axes=((-1),(0)))  # [B,M,N]
+        # lstm_attention_fw = tf.matmul(lstm_attention_fw, tf.transpose(lstm_outputs_fw, perm=[0,2,1])) # matmul([B,M,N], B,N,M]) => [B,M,M]
+        # lstm_attention_fw = tf.nn.softmax(lstm_attention_fw) # [B,M,M]
+        # lstm_attention_fw_output = tf.matmul(lstm_attention_fw, lstm_outputs_fw) # [B,M,N]
+        #
+        # # Backward
+        # lstm_attention_bw_matrix = tf.get_variable(name="lstm_attention_bw_matrix",
+        #                                            shape=[self.config["word_recurrent_size"], self.config["word_recurrent_size"]],
+        #                                            initializer=tf.initializers.identity(), trainable=True)
+        # lstm_attention_bw = tf.tensordot(lstm_outputs_bw, lstm_attention_bw_matrix, axes=((-1),(0)))  # [B,M,N]
+        # lstm_attention_bw = tf.matmul(lstm_attention_bw, tf.transpose(lstm_outputs_bw, perm=[0,2,1])) # matmul([B,M,N], B,N,M]) => [B,M,M]
+        # lstm_attention_bw = tf.nn.softmax(lstm_attention_bw) # [B,M,M]
+        # lstm_attention_bw_output = tf.matmul(lstm_attention_bw, lstm_outputs_bw) # [B,M,N]
+        #
+        # # To be consistent with the next part of the code
+        # lstm_outputs_fw = lstm_attention_fw_output
+        # lstm_outputs_bw = lstm_attention_bw_output
 
         # ---------------------------------------------------------------- #
 
