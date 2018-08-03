@@ -10,7 +10,7 @@ try:
 except:
     import pickle
 
-# import pdb
+# import pdb --- python debugger
 
 class SequenceLabeler(object):
     def __init__(self, config):
@@ -29,6 +29,7 @@ class SequenceLabeler(object):
             self.config["attention_char_lstm"] = False
         if "attention_word_lstm" not in self.config:
             self.config["attention_word_lstm"] = False
+        # ---------------------------------------------- #
 
     def build_vocabs(self, data_train, data_dev, data_test, embedding_path=None):
         data_source = list(data_train)
@@ -294,7 +295,12 @@ class SequenceLabeler(object):
             # M = max_sentecce_length
             # N = word_recurrent_size
             # lstm_outputs_fw           [B,M,N]
-            # lstm_attention_fw_matrix  [N,N]
+            # lstm_attention_fw_weight_c  [2N,N]
+            # lstm_attention_fw_weight_a  [N,N] => For the 'general' content score function
+
+            # Global Attention Model using the 'general' content score function
+            # https://arxiv.org/pdf/1508.04025.pdf
+            # Effective Approaches to Attention-based Neural Machine Translation by Luong 2015
 
             (lstm_outputs_fw, lstm_outputs_bw), _ = \
                 tf.nn.bidirectional_dynamic_rnn(word_lstm_cell_fw, word_lstm_cell_bw,
@@ -303,22 +309,36 @@ class SequenceLabeler(object):
                                                 dtype=tf.float32, time_major=False)
 
             # Forward
-            lstm_attention_fw_matrix = tf.get_variable(name="lstm_attention_fw_matrix",
+            lstm_attention_fw_weight_c = tf.get_variable(name="lstm_attention_fw_weight_c",
+                                                       shape=[2*self.config["word_recurrent_size"], self.config["word_recurrent_size"]],
+                                                       initializer=self.initializer, trainable=True)
+            lstm_attention_fw_weight_a = tf.get_variable(name="lstm_attention_fw_weight_a",
                                                        shape=[self.config["word_recurrent_size"], self.config["word_recurrent_size"]],
                                                        initializer=tf.initializers.identity(), trainable=True)
-            lstm_attention_fw = tf.tensordot(lstm_outputs_fw, lstm_attention_fw_matrix, axes=((-1),(0)))  # [B,M,N]
+            lstm_attention_fw = tf.tensordot(lstm_outputs_fw, lstm_attention_fw_weight_a, axes=((-1),(0)))  # [B,M,N]
             lstm_attention_fw = tf.matmul(lstm_attention_fw, tf.transpose(lstm_outputs_fw, perm=[0,2,1])) # matmul([B,M,N], B,N,M]) => [B,M,M]
             lstm_attention_fw = tf.nn.softmax(lstm_attention_fw) # [B,M,M]
-            lstm_attention_fw_output = tf.matmul(lstm_attention_fw, lstm_outputs_fw) # [B,M,N]
+            context_fw = tf.matmul(lstm_attention_fw, lstm_outputs_fw) # [B,M,N]
+
+            lstm_attention_fw_output = tf.concat([lstm_outputs_fw, context_fw], axis=-1) # [B,M,2N]
+            lstm_attention_fw_output = tf.tensordot(lstm_attention_fw_output, lstm_attention_fw_weight_c, axes=((-1),(0))) # [B,M,N]
+            lstm_attention_fw_output = tf.tanh(lstm_attention_fw_output) # [B,M,N]
 
             # Backward
-            lstm_attention_bw_matrix = tf.get_variable(name="lstm_attention_bw_matrix",
+            lstm_attention_bw_weight_c = tf.get_variable(name="lstm_attention_bw_weight_c",
+                                                       shape=[2*self.config["word_recurrent_size"], self.config["word_recurrent_size"]],
+                                                       initializer=self.initializer, trainable=True)
+            lstm_attention_bw_weight_a = tf.get_variable(name="lstm_attention_bw_weight_a",
                                                        shape=[self.config["word_recurrent_size"], self.config["word_recurrent_size"]],
                                                        initializer=tf.initializers.identity(), trainable=True)
-            lstm_attention_bw = tf.tensordot(lstm_outputs_bw, lstm_attention_bw_matrix, axes=((-1),(0)))  # [B,M,N]
+            lstm_attention_bw = tf.tensordot(lstm_outputs_bw, lstm_attention_bw_weight_a, axes=((-1),(0)))  # [B,M,N]
             lstm_attention_bw = tf.matmul(lstm_attention_bw, tf.transpose(lstm_outputs_bw, perm=[0,2,1])) # matmul([B,M,N], B,N,M]) => [B,M,M]
             lstm_attention_bw = tf.nn.softmax(lstm_attention_bw) # [B,M,M]
-            lstm_attention_bw_output = tf.matmul(lstm_attention_bw, lstm_outputs_bw) # [B,M,N]
+            context_bw = tf.matmul(lstm_attention_bw, lstm_outputs_bw) # [B,M,N]
+
+            lstm_attention_bw_output = tf.concat([lstm_outputs_bw, context_bw], axis=-1) # [B,M,2N]
+            lstm_attention_bw_output = tf.tensordot(lstm_attention_bw_output, lstm_attention_bw_weight_c, axes=((-1),(0))) # [B,M,N]
+            lstm_attention_bw_output = tf.tanh(lstm_attention_bw_output) # [B,M,N]
 
             # To be consistent with the next part of the code
             lstm_outputs_fw = lstm_attention_fw_output
