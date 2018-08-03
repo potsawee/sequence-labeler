@@ -295,12 +295,16 @@ class SequenceLabeler(object):
             # M = max_sentecce_length
             # N = word_recurrent_size
             # lstm_outputs_fw           [B,M,N]
-            # lstm_attention_fw_weight_c  [2N,N]
+            # lstm_attention_fw_weight_c  [2N,2N]
             # lstm_attention_fw_weight_a  [N,N] => For the 'general' content score function
 
             # Global Attention Model using the 'general' content score function
             # https://arxiv.org/pdf/1508.04025.pdf
-            # Effective Approaches to Attention-based Neural Machine Translation by Luong 2015
+            # Effective Approaches to Attention-based Neural Machine Translation by Luong (2015)
+
+            # Multihead Attention
+            # https://arxiv.org/pdf/1706.03762.pdf
+            # Attention Is All You Need (2017)
 
             (lstm_outputs_fw, lstm_outputs_bw), _ = \
                 tf.nn.bidirectional_dynamic_rnn(word_lstm_cell_fw, word_lstm_cell_bw,
@@ -308,12 +312,17 @@ class SequenceLabeler(object):
                                                 sequence_length=self.sentence_lengths,
                                                 dtype=tf.float32, time_major=False)
 
-            multihead = 5
+            if "multihead" not in self.config:
+                multihead = 1
+            else:
+                multihead = self.config["multihead"]
+
+            assert(self.config["word_recurrent_size"] % multihead == 0, "Multihead size invalid")
             step_size = self.config["word_recurrent_size"]/multihead
 
             # Forward
             lstm_attention_fw_weight_c = tf.get_variable(name="lstm_attention_fw_weight_c",
-                                                       shape=[2*self.config["word_recurrent_size"], self.config["word_recurrent_size"]],
+                                                       shape=[2*self.config["word_recurrent_size"], 2*self.config["word_recurrent_size"]],
                                                        initializer=self.initializer, trainable=True)
             context_fws = []
             for i in range(multihead):
@@ -328,12 +337,12 @@ class SequenceLabeler(object):
             context_fw = tf.concat(context_fws, axis=-1)
 
             lstm_attention_fw_output = tf.concat([lstm_outputs_fw, context_fw], axis=-1) # [B,M,2N]
-            lstm_attention_fw_output = tf.tensordot(lstm_attention_fw_output, lstm_attention_fw_weight_c, axes=((-1),(0))) # [B,M,N]
-            lstm_attention_fw_output = tf.tanh(lstm_attention_fw_output) # [B,M,N]
+            lstm_attention_fw_output = tf.tensordot(lstm_attention_fw_output, lstm_attention_fw_weight_c, axes=((-1),(0))) # [B,M,2N]
+            lstm_attention_fw_output = tf.tanh(lstm_attention_fw_output) # [B,M,2N]
 
             # Backward
             lstm_attention_bw_weight_c = tf.get_variable(name="lstm_attention_bw_weight_c",
-                                                       shape=[2*self.config["word_recurrent_size"], self.config["word_recurrent_size"]],
+                                                       shape=[2*self.config["word_recurrent_size"], 2*self.config["word_recurrent_size"]],
                                                        initializer=self.initializer, trainable=True)
             context_bws = []
             for i in range(multihead):
@@ -348,8 +357,8 @@ class SequenceLabeler(object):
             context_bw = tf.concat(context_bws, axis=-1)
 
             lstm_attention_bw_output = tf.concat([lstm_outputs_bw, context_bw], axis=-1) # [B,M,2N]
-            lstm_attention_bw_output = tf.tensordot(lstm_attention_bw_output, lstm_attention_bw_weight_c, axes=((-1),(0))) # [B,M,N]
-            lstm_attention_bw_output = tf.tanh(lstm_attention_bw_output) # [B,M,N]
+            lstm_attention_bw_output = tf.tensordot(lstm_attention_bw_output, lstm_attention_bw_weight_c, axes=((-1),(0))) # [B,M,2N]
+            lstm_attention_bw_output = tf.tanh(lstm_attention_bw_output) # [B,M,2N]
 
             # To be consistent with the next part of the code
             lstm_outputs_fw = lstm_attention_fw_output
@@ -368,7 +377,7 @@ class SequenceLabeler(object):
 
         processed_tensor = tf.concat([lstm_outputs_fw, lstm_outputs_bw], 2)
         # processed_tensor_size = self.config["word_recurrent_size"] * 2
-        processed_tensor_size = tf.shape(processed_tensor)[-1]
+        processed_tensor_size = processed_tensor.get_shape()[-1]
 
         if self.config["hidden_layer_size"] > 0:
             processed_tensor = tf.layers.dense(processed_tensor, self.config["hidden_layer_size"], activation=tf.tanh, kernel_initializer=self.initializer)
