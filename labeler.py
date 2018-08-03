@@ -308,17 +308,24 @@ class SequenceLabeler(object):
                                                 sequence_length=self.sentence_lengths,
                                                 dtype=tf.float32, time_major=False)
 
+            multihead = 5
+            step_size = self.config["word_recurrent_size"]/multihead
+
             # Forward
             lstm_attention_fw_weight_c = tf.get_variable(name="lstm_attention_fw_weight_c",
                                                        shape=[2*self.config["word_recurrent_size"], self.config["word_recurrent_size"]],
                                                        initializer=self.initializer, trainable=True)
-            lstm_attention_fw_weight_a = tf.get_variable(name="lstm_attention_fw_weight_a",
-                                                       shape=[self.config["word_recurrent_size"], self.config["word_recurrent_size"]],
-                                                       initializer=tf.initializers.identity(), trainable=True)
-            lstm_attention_fw = tf.tensordot(lstm_outputs_fw, lstm_attention_fw_weight_a, axes=((-1),(0)))  # [B,M,N]
-            lstm_attention_fw = tf.matmul(lstm_attention_fw, tf.transpose(lstm_outputs_fw, perm=[0,2,1])) # matmul([B,M,N], B,N,M]) => [B,M,M]
-            lstm_attention_fw = tf.nn.softmax(lstm_attention_fw) # [B,M,M]
-            context_fw = tf.matmul(lstm_attention_fw, lstm_outputs_fw) # [B,M,N]
+            context_fws = []
+            for i in range(multihead):
+                lstm_attention_fw_weight_a = tf.get_variable(name="lstm_attention_fw_weight_a" + str(i),
+                                                           shape=[step_size, step_size],
+                                                           initializer=tf.initializers.identity(), trainable=True)
+
+                lstm_attention_fw = tf.tensordot(lstm_outputs_fw[:,:,i*step_size:(i+1)*step_size], lstm_attention_fw_weight_a, axes=((-1),(0)))  # [B,M,N]
+                lstm_attention_fw = tf.matmul(lstm_attention_fw, tf.transpose(lstm_outputs_fw[:,:,i*step_size:(i+1)*step_size], perm=[0,2,1])) # matmul([B,M,N], B,N,M]) => [B,M,M]
+                lstm_attention_fw = tf.nn.softmax(lstm_attention_fw) # [B,M,M]
+                context_fws.append(tf.matmul(lstm_attention_fw, lstm_outputs_fw[:,:,i*step_size:(i+1)*step_size])) # [B,M,N]
+            context_fw = tf.concat(context_fws, axis=-1)
 
             lstm_attention_fw_output = tf.concat([lstm_outputs_fw, context_fw], axis=-1) # [B,M,2N]
             lstm_attention_fw_output = tf.tensordot(lstm_attention_fw_output, lstm_attention_fw_weight_c, axes=((-1),(0))) # [B,M,N]
@@ -328,13 +335,17 @@ class SequenceLabeler(object):
             lstm_attention_bw_weight_c = tf.get_variable(name="lstm_attention_bw_weight_c",
                                                        shape=[2*self.config["word_recurrent_size"], self.config["word_recurrent_size"]],
                                                        initializer=self.initializer, trainable=True)
-            lstm_attention_bw_weight_a = tf.get_variable(name="lstm_attention_bw_weight_a",
-                                                       shape=[self.config["word_recurrent_size"], self.config["word_recurrent_size"]],
-                                                       initializer=tf.initializers.identity(), trainable=True)
-            lstm_attention_bw = tf.tensordot(lstm_outputs_bw, lstm_attention_bw_weight_a, axes=((-1),(0)))  # [B,M,N]
-            lstm_attention_bw = tf.matmul(lstm_attention_bw, tf.transpose(lstm_outputs_bw, perm=[0,2,1])) # matmul([B,M,N], B,N,M]) => [B,M,M]
-            lstm_attention_bw = tf.nn.softmax(lstm_attention_bw) # [B,M,M]
-            context_bw = tf.matmul(lstm_attention_bw, lstm_outputs_bw) # [B,M,N]
+            context_bws = []
+            for i in range(multihead):
+                lstm_attention_bw_weight_a = tf.get_variable(name="lstm_attention_bw_weight_a" + str(i),
+                                                           shape=[step_size, step_size],
+                                                           initializer=tf.initializers.identity(), trainable=True)
+
+                lstm_attention_bw = tf.tensordot(lstm_outputs_bw[:,:,i*step_size:(i+1)*step_size], lstm_attention_bw_weight_a, axes=((-1),(0)))  # [B,M,N]
+                lstm_attention_bw = tf.matmul(lstm_attention_bw, tf.transpose(lstm_outputs_bw[:,:,i*step_size:(i+1)*step_size], perm=[0,2,1])) # matmul([B,M,N], B,N,M]) => [B,M,M]
+                lstm_attention_bw = tf.nn.softmax(lstm_attention_bw) # [B,M,M]
+                context_bws.append(tf.matmul(lstm_attention_bw, lstm_outputs_bw[:,:,i*step_size:(i+1)*step_size])) # [B,M,N]
+            context_bw = tf.concat(context_bws, axis=-1)
 
             lstm_attention_bw_output = tf.concat([lstm_outputs_bw, context_bw], axis=-1) # [B,M,2N]
             lstm_attention_bw_output = tf.tensordot(lstm_attention_bw_output, lstm_attention_bw_weight_c, axes=((-1),(0))) # [B,M,N]
@@ -356,7 +367,8 @@ class SequenceLabeler(object):
             self.loss += self.config["lmcost_joint_lstm_gamma"] * self.construct_lmcost(lstm_outputs_fw, lstm_outputs_bw, self.sentence_lengths, self.word_ids, "joint", "lmcost_lstm_joint")
 
         processed_tensor = tf.concat([lstm_outputs_fw, lstm_outputs_bw], 2)
-        processed_tensor_size = self.config["word_recurrent_size"] * 2
+        # processed_tensor_size = self.config["word_recurrent_size"] * 2
+        processed_tensor_size = tf.shape(processed_tensor)[-1]
 
         if self.config["hidden_layer_size"] > 0:
             processed_tensor = tf.layers.dense(processed_tensor, self.config["hidden_layer_size"], activation=tf.tanh, kernel_initializer=self.initializer)
