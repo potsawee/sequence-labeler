@@ -337,8 +337,8 @@ class SequenceLabeler(object):
             context_fw = tf.concat(context_fws, axis=-1)
 
             lstm_attention_fw_output = tf.concat([lstm_outputs_fw, context_fw], axis=-1) # [B,M,2N]
-            lstm_attention_fw_output = tf.tensordot(lstm_attention_fw_output, lstm_attention_fw_weight_c, axes=((-1),(0))) # [B,M,2N]
-            lstm_attention_fw_output = tf.tanh(lstm_attention_fw_output) # [B,M,2N]
+            # lstm_attention_fw_output = tf.tensordot(lstm_attention_fw_output, lstm_attention_fw_weight_c, axes=((-1),(0))) # [B,M,2N]
+            # lstm_attention_fw_output = tf.tanh(lstm_attention_fw_output) # [B,M,2N]
 
             # Backward
             lstm_attention_bw_weight_c = tf.get_variable(name="lstm_attention_bw_weight_c",
@@ -357,8 +357,8 @@ class SequenceLabeler(object):
             context_bw = tf.concat(context_bws, axis=-1)
 
             lstm_attention_bw_output = tf.concat([lstm_outputs_bw, context_bw], axis=-1) # [B,M,2N]
-            lstm_attention_bw_output = tf.tensordot(lstm_attention_bw_output, lstm_attention_bw_weight_c, axes=((-1),(0))) # [B,M,2N]
-            lstm_attention_bw_output = tf.tanh(lstm_attention_bw_output) # [B,M,2N]
+            # lstm_attention_bw_output = tf.tensordot(lstm_attention_bw_output, lstm_attention_bw_weight_c, axes=((-1),(0))) # [B,M,2N]
+            # lstm_attention_bw_output = tf.tanh(lstm_attention_bw_output) # [B,M,2N]
 
             # To be consistent with the next part of the code
             lstm_outputs_fw = lstm_attention_fw_output
