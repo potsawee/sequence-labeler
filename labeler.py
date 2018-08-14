@@ -321,9 +321,9 @@ class SequenceLabeler(object):
             step_size = self.config["word_recurrent_size"]/multihead
 
             # Forward
-            lstm_attention_fw_weight_c = tf.get_variable(name="lstm_attention_fw_weight_c",
-                                                       shape=[2*self.config["word_recurrent_size"], 2*self.config["word_recurrent_size"]],
-                                                       initializer=self.initializer, trainable=True)
+            # lstm_attention_fw_weight_c = tf.get_variable(name="lstm_attention_fw_weight_c",
+            #                                            shape=[2*self.config["word_recurrent_size"], 2*self.config["word_recurrent_size"]],
+            #                                            initializer=self.initializer, trainable=True)
             context_fws = []
             for i in range(multihead):
                 lstm_attention_fw_weight_a = tf.get_variable(name="lstm_attention_fw_weight_a" + str(i),
@@ -341,9 +341,9 @@ class SequenceLabeler(object):
             # lstm_attention_fw_output = tf.tanh(lstm_attention_fw_output) # [B,M,2N]
 
             # Backward
-            lstm_attention_bw_weight_c = tf.get_variable(name="lstm_attention_bw_weight_c",
-                                                       shape=[2*self.config["word_recurrent_size"], 2*self.config["word_recurrent_size"]],
-                                                       initializer=self.initializer, trainable=True)
+            # lstm_attention_bw_weight_c = tf.get_variable(name="lstm_attention_bw_weight_c",
+            #                                            shape=[2*self.config["word_recurrent_size"], 2*self.config["word_recurrent_size"]],
+            #                                            initializer=self.initializer, trainable=True)
             context_bws = []
             for i in range(multihead):
                 lstm_attention_bw_weight_a = tf.get_variable(name="lstm_attention_bw_weight_a" + str(i),
